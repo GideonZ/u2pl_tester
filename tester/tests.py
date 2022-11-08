@@ -17,11 +17,12 @@ logger.setLevel(logging.DEBUG)
 #ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 #logger.addHandler(ch)
 
-dut_fpga  = '../../../target/fpga/ecp5_dut/impl1/u2p_ecp5_dut_impl1.bit'
-dut_appl  = '../../../target/software/riscv32_dut/result/dut.bin'
-final_fpga = '../../../target/fpga/u2plus_ecp5/impl1/u2p_ecp5_impl1.bit'
-final_appl = '../../../target/software/riscv32_ultimate/result/ultimate.app'
-final_fat = '../../../target/software/riscv32_ultimate/fat.bin'
+dut_fpga  = 'binaries/u2p_ecp5_dut_impl1.bit'
+dut_appl  = 'binaries/dut.bin'
+final_fpga = 'binaries/u2p_ecp5_impl1.bit'
+final_appl = 'binaries/ultimate.app'
+final_fat = 'binaries/fat.bin'
+ECPPROG = '../ecpprog/ecpprog/ecpprog'
 
 TEST_SEND_ETH = 5
 TEST_RECV_ETH = 6
@@ -81,7 +82,6 @@ pio_names = {
     43: 'CAS_WRITE',
 }
 
-ECPPROG = '../../../tools/ecpprog/ecpprog/ecpprog'
 
 class UltimateIIPlusLatticeTests:
     def __init__(self):

@@ -2,8 +2,8 @@ import time, struct, logging
 from datetime import datetime
 from jtag_functions import JtagClient, JtagClientException
 
-tester_fpga = '../../../target/fpga/ecp5_tester/impl1/ecp5_tester_impl1.bit'
-tester_app  = '../../../target/software/riscv32_tester/result/tester.bin'
+tester_fpga = 'binaries/ecp5_tester_impl1.bit'
+tester_app  = 'binaries/tester.bin'
 
 DUT_TO_TESTER   = 0x0094
 TESTER_TO_DUT   = 0x0098
