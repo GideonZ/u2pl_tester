@@ -1,0 +1,3 @@
+[submodule "ecpprog"]
+	path = ecpprog
+	url = https://github.com/GideonZ/ecpprog
