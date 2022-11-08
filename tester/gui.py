@@ -1,13 +1,17 @@
 #!/usr/bin/python3
 
 import tkinter as tk
+import logging
+import git
 from tkinter import ttk, messagebox
 import tkinter.scrolledtext as tkscrolled
 from PIL import ImageTk, Image
 from pprint import pprint
-import logging
 from tests import UltimateIIPlusLatticeTests, TestFail, TestFailCritical, JtagClientException
 from support import TesterADC
+from datetime import datetime
+from db import Database
+from decimal import *
 
 # sudo apt install python3-pil python3-pil.imagetk
 
@@ -67,6 +71,9 @@ class InfoFields:
 class MyGui:
     def __init__(self):
         self.CollectTests()
+        self.db = Database()
+        repo = git.Repo(search_parent_directories=True)
+        self.gitsha = repo.head.object.hexsha
 
     def CollectTests(self):
         self.testsuite = UltimateIIPlusLatticeTests()
@@ -115,17 +122,23 @@ class MyGui:
             self.textbox.insert(tk.END, "-> Result: CRITICAL FAILURE!\n")
             self.textbox.insert(tk.END, f"Reason: {e}\n\n")
             critical = True
+            self.critical = True
         except TestFail as e:
             self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
             self.textbox.insert(tk.END, "-> Result: FAIL!\n")
             self.textbox.insert(tk.END, f"Reason: {e}\n\n")
+            self.failed_tests.append(name[5:8]) # Add number to list
             self.errors += 1
         except JtagClientException as e:
             messagebox.showerror("Failure!", f"Communication Error!\n{e}\nRestart Tester Application!")
             exit()
 
         if name in self.after:
-            self.after[name]()
+            try:
+                self.after[name]()
+            except TestFailCritical as e:
+                critical = True
+                self.critical = True
 
         self.textbox.see(tk.END)
         self.window.update()
@@ -136,6 +149,7 @@ class MyGui:
         self.progress[0]['value'] = 0
         self.progress[1]['value'] = 0
         self.progress[2]['value'] = 0
+        self.textbox.delete(1.0, tk.END)
         self.window.update()
 
         self.serial = self.serial_entry.get()
@@ -153,9 +167,12 @@ class MyGui:
                 return
 
         self.errors = 0
-        self.testsuite.proto = False
+        self.flashed = "No"
+        self.critical = False
+        self.failed_tests = [ ]
+        self.testsuite.reset_variables()
 
-        for name, (func, _) in self.functions.items():
+        for name, _ in self.functions.items():
             self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_err)
 
         self.stats.clear()
@@ -170,6 +187,7 @@ class MyGui:
         # If all tests are successful, the board can be flashed
         if self.errors == 0:
             self.testsuite.program_flash([self.FlashUpdateFPGA, self.FlashUpdateAppl, self.FlashUpdateFAT])
+            self.flashed = "Yes"
         else:
             messagebox.showerror("Reject", "Board has not been programmed due to errors.")
 
@@ -179,6 +197,7 @@ class MyGui:
             self.window.update()
 
         self.testsuite.shutdown()
+        self.write_test_to_db()
         self.start_button.configure(state = 'normal')
 
     def setup(self):
@@ -278,10 +297,18 @@ class MyGui:
         self.stats.set('Oscillator', f'{self.testsuite.osc:.6f} MHz')
         
     def UpdateUniqueId(self):
-        self.stats.set('FPGA ID', f'{self.testsuite.unique:016X}')
+        fpga_id_string = f'{self.testsuite.unique:016X}'
+        self.stats.set('FPGA ID', fpga_id_string)
         self.stats.set('Lot #', f'{self.testsuite.lot:08X}')
         self.stats.set('Wafer #', f'{self.testsuite.wafer}')
         self.stats.set('X / Y / Step', f'({self.testsuite.x_pos}, {self.testsuite.y_pos}, {self.testsuite.extra})')
+        board = self.db.get_board(self.serial)
+        if board:
+            if 'fpga_id' in board:
+                if board['fpga_id'] != fpga_id_string:
+                    msg = "This Serial Number has already been used for another board!"
+                    messagebox.showerror("Wrong Serial #", msg)
+                    raise TestFailCritical(msg)
 
     def UpdateBoardRevision(self):
         self.stats.set('Board Revision', f'{self.testsuite.revision}')
@@ -291,6 +318,43 @@ class MyGui:
             self.errors -= 1
             # Rerun test!
             self.RunOneTest('test_001_regulators')
+
+    def write_test_to_db(self):
+        # Write board to board table
+        if self.testsuite.unique != 0 and self.testsuite.flashid != 0:
+            self.db.add_board({
+                'serial': self.serial,
+                'fpga_id': f'{self.testsuite.unique:016X}',
+                'flash_id': f'{self.testsuite.flashid:016X}',
+                'board_rev': self.testsuite.revision,
+            })
+
+        time = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
+
+        # Write statistiscs to stats table
+        self.db.add_test_results({
+            'serial': self.serial,
+            'date': time,
+            'supply': Decimal(f'{self.testsuite.supply:.2f}'),
+            'bootcurr': Decimal(f'{self.testsuite.current:.1f}'),
+            'v50': self.testsuite.voltages[0][:-2],
+            'v43': self.testsuite.voltages[1][:-2],
+            'v33': self.testsuite.voltages[2][:-2],
+            'v25': self.testsuite.voltages[3][:-2],
+            'v18': self.testsuite.voltages[4][:-2],
+            'v11': self.testsuite.voltages[5][:-2],
+            'v09': self.testsuite.voltages[6][:-2],
+            'refclk': Decimal(f'{self.testsuite.refclk:.6f}'),
+            'osc': Decimal(f'{self.testsuite.osc:.6f}'),
+            'git': self.gitsha,
+            'flashed': self.flashed,
+            'critical': self.critical,
+            'failed': ','.join(self.failed_tests),
+        })
+
+        self.db.add_log({'serial' : self.serial,
+                         'date': time,
+                         'log': self.textbox.get("1.0", tk.END) })
 
 if __name__ == '__main__':
     gui = MyGui()

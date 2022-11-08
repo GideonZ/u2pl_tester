@@ -97,12 +97,28 @@ class UltimateIIPlusLatticeTests:
 
         self.tester = Tester()
         self.dut = DeviceUnderTest()    
-
-        self.proto = False
+        self.reset_variables()
 
     def shutdown(self):
         # Turn off power
         self.tester.user_set_io(0)
+
+    def reset_variables(self):
+        self.proto = False
+        self.flashid = 0
+        self.unique = 0
+        self.lot = 0
+        self.wafer = 0
+        self.x_pos = 0
+        self.y_pos = 0
+        self.extra = 0
+        self.supply = 0
+        self.current = 0
+        self.refclk = 0
+        self.osc = 0
+        self.voltages = [ 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A', 'N/A' ]
+        self.revision = 0
+        self.time_since_battery = 0
 
     def test_000_boot_current(self):
         """Bootup Current Draw"""
@@ -166,6 +182,9 @@ class UltimateIIPlusLatticeTests:
 
     def test_019_unique_id(self):
         """Unique ID"""
+        if self.dut.ecp_read_id() != 0x41111043:
+            raise TestFailCritical("FPGA on DUT not recognized")
+
         (code, lot, wafer, x, y, extra) = self.dut.ecp_read_unique_id()
         self.unique = code
         self.lot = lot
@@ -262,7 +281,7 @@ class UltimateIIPlusLatticeTests:
             clk1 = self.dut.user_read_io(0x100400, 16)
             f = [0, 0, 0, 0]
             (f[0], f[1], f[2], f[3]) = struct.unpack("<LLLL", clk1)
-            logger.debug(str(f))
+            # logger.debug(str(f))
             for i in f:
                 if i & 0x1000000 != 0:
                     val = i & 0xFFFFFF
@@ -277,14 +296,21 @@ class UltimateIIPlusLatticeTests:
         logger.info(f"Frequency: {freq:.6f} MHz")
         logger.info(f"Diff: {self.ppm:.1f} ppm")
 
-        clk2 = self.dut.user_read_io(0x100500, 16)
-        for i in range(3):
-            (_f1, f2, f3, _f4) = struct.unpack("<LLLL", clk2)
-            if f2 == f3 or i == 2:
-                freq = (f2 & 0xFFFFFF) / 65536
-                self.osc = freq
-                logger.info(f"Oscillator: {freq:.6f} MHz")
-                break
+        for i in range(10):
+            clk2 = self.dut.user_read_io(0x100500, 16)
+            f = [0, 0, 0, 0]
+            (f[0], f[1], f[2], f[3]) = struct.unpack("<LLLL", clk2)
+            for i in f:
+                if i & 0x1000000 != 0:
+                    val = i & 0xFFFFFF
+                    break
+            else:
+                time.sleep(0.2)
+                continue
+            break
+        freq = (val & 0xFFFFFF) / 65536
+        self.osc = freq
+        logger.info(f"Oscillator: {freq:.6f} MHz")
 
         if abs(self.ppm) > 120.:
             raise TestFail("Reference frequency out of range.")
