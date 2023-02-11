@@ -168,6 +168,7 @@ class MyGui:
 
         self.errors = 0
         self.flashed = "No"
+        self.boot_ok = False
         self.critical = False
         self.failed_tests = [ ]
         self.testsuite.reset_variables()
@@ -181,21 +182,29 @@ class MyGui:
         self.window.update()
 
         for name in self.functions:
-            if self.RunOneTest(name): # Returns 'true' when a critical error occurred (could also have re-raised)
-                break
+            if "test" in name:
+                if self.RunOneTest(name): # Returns 'true' when a critical error occurred (could also have re-raised)
+                    break
 
         # If all tests are successful, the board can be flashed
         if self.errors == 0:
             self.testsuite.program_flash([self.FlashUpdateFPGA, self.FlashUpdateAppl, self.FlashUpdateFAT])
             self.flashed = "Yes"
+            self.boot_ok = self.testsuite.late_099_boot()
+            if not self.boot_ok:
+                self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
+                self.textbox.insert(tk.END, "\n!!! BOARD DOESN'T BOOT !!!\n\n")
+                messagebox.showerror("Reject", "Board doesn't boot correctly after Flashing.")
+            else:
+                self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_pass)
+                self.textbox.insert(tk.END, "\n*** BOARD SUCCESSFULLY TESTED AND PROGRAMMED! ***\n\n")
+
         else:
             messagebox.showerror("Reject", "Board has not been programmed due to errors.")
 
-        if self.errors == 0:
-            self.textbox.insert(tk.END, "\n*** BOARD SUCCESSFULLY TESTED AND PROGRAMMED! ***\n\n")
-            self.textbox.see(tk.END)
-            self.window.update()
-
+        self.testsuite.dut_off()            
+        self.textbox.see(tk.END)
+        self.window.update()
         self.testsuite.shutdown()
         self.write_test_to_db()
         self.start_button.configure(state = 'normal')
@@ -348,6 +357,7 @@ class MyGui:
             'osc': Decimal(f'{self.testsuite.osc:.6f}'),
             'git': self.gitsha,
             'flashed': self.flashed,
+            'booted' : self.boot_ok,
             'critical': self.critical,
             'failed': ','.join(self.failed_tests),
         })

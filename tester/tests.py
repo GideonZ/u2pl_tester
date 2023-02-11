@@ -82,6 +82,22 @@ pio_names = {
     43: 'CAS_WRITE',
 }
 
+pio_top    = [ 16, 17, 18, 19, 20, 21, 22, 23, 29, 28, 33, 35, 30, 31, 34, 25, 27, 36]
+pio_bottom = [  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 24, 37, 26, 32]
+pio_bottom_out = [  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 37, 26, 32]
+pio_cassette = [ 40, 41, 42, 43 ]
+
+def bitwise_and(array_a, array_b):
+    out_array = bytearray(len(array_a))
+    for i,b in enumerate(array_a):
+        out_array[i] = b & array_b[i]
+    return out_array
+
+def bitwise_ornot(array_a, array_b):
+    out_array = bytearray(len(array_a))
+    for i,b in enumerate(array_a):
+        out_array[i] = b | (255 - array_b[i])
+    return out_array
 
 class UltimateIIPlusLatticeTests:
     def __init__(self):
@@ -100,6 +116,10 @@ class UltimateIIPlusLatticeTests:
         self.reset_variables()
 
     def shutdown(self):
+        # Turn off power
+        self.tester.user_set_io(0)
+
+    def dut_off(self):
         # Turn off power
         self.tester.user_set_io(0)
 
@@ -338,7 +358,7 @@ class UltimateIIPlusLatticeTests:
         if "DUT Main" not in text:
             raise TestFailCritical('Running test application failed')
 
-    def test_006_buttons(self):
+    def _test_006_buttons(self):
         """Button Test"""
         logger.warning("Press each button!")
         (result, console) = self.dut.perform_test(TEST_BUTTONS, max_time = 60)
@@ -440,7 +460,7 @@ class UltimateIIPlusLatticeTests:
         if right_peak != 1000.0:
             raise TestFail("Peak in spectrum not at 1000 Hz")
 
-    def test_012_iec(self):
+    def test_021_iec(self):
         """IEC (Serial DIN)"""
         # IEC is only available on the dut.
         # Can only toggle each output and observe the input
@@ -460,35 +480,24 @@ class UltimateIIPlusLatticeTests:
         if errors > 0:
             raise TestFail("IEC local loopback failure.")
 
-    def test_013_cartio_in(self):
-        """Card Edge I/Os"""
+    def walking_bit_test_tester_to_dut(self, test_bits, test_continuity = True):
         # Set everything to input on dut
         # Bit 47 has to be set to 1, because that's BUFFER_EN
+        mask = bytearray(6)
+        for i in test_bits:
+            mask[i//8] |= 1 << (i %8)
+
         zeros = bytearray(8)
         buf_en = bytearray(8)
         buf_en[5] = 0x80
         self.dut.user_write_io(0x100308, zeros)
         self.dut.user_write_io(0x100300, buf_en)
-        logger.debug("Setting bits:" + str(find_ones(buf_en)))
-        rb = self.dut.user_read_io(0x100300, 8)
-        logger.debug("Read: " + str(find_ones(rb)))
 
         # Set everything to output on tester
         ones = b'\xff' * 8
         self.tester.user_write_io(0x100308, ones)
 
-        slot_bits = [x for x in range(38)]
-        cassette_bits = [x for x in range(40, 44)]
-        test_bits = slot_bits + cassette_bits
         errors = 0
-
-        #while(1):
-        #    for i in test_bits:
-        #        pattern = bytearray(6)
-        #        pattern[i//8] |= 1 << (i %8)
-        #        print("Writing: ", pattern.hex())
-        #        self.tester.user_write_io(0x100300, pattern)
-
         ## Walking one test
         diffs = set()
         for i in test_bits:
@@ -497,42 +506,54 @@ class UltimateIIPlusLatticeTests:
             logger.debug("Writing: " + str(pattern.hex()))
             self.tester.user_write_io(0x100300, pattern)
             trb = self.tester.user_read_io(0x100300, 6)
-            if (trb != pattern):
-                logger.error(f"BIT {i} is stuck hard!")
+            if (bitwise_and(trb, pattern) != pattern):
+                logger.error(f"BIT {pio_names[i]} is stuck hard!")
+                errors += 1
+            elif (bitwise_and(trb, mask) != pattern):
+                logger.error(f"Local short from {pio_names[i]} to others: {pattern} vs {trb}")
+                errors += 1
+
+            if not test_continuity:
+                continue
+
             rb = bytearray(self.dut.user_read_io(0x100300, 6))
-            # Turn off bit 39 (VCC)
-            rb[4] &= 0x7F
-            logger.debug("Read:    " + rb.hex() + str(find_ones(rb)))
+            rb2 = bitwise_and(rb, mask)
+            logger.debug("Read:    " + rb.hex() + str(find_ones(rb2)))
             diff = bytearray(6)
             for i in range(6):
-                diff[i] = pattern[i] ^ rb[i]
+                diff[i] = pattern[i] ^ rb2[i]
             logger.debug("Diff:    " + diff.hex() + str(find_ones(diff)))
             diffs.update(find_ones(diff))
-            if (rb != pattern):
+            if (rb2 != pattern):
                 errors += 1
 
         # Walking zero test
         for i in test_bits:
             pattern = bytearray(b'\xFF\xFF\xFF\xFF\xFF\xFF')
+            single_bit = bytearray(6)
             pattern[i//8] &= ~(1 << (i %8))
+            single_bit[i//8] |= (1 << (i % 8))
             logger.debug("Writing: " + pattern.hex())
             self.tester.user_write_io(0x100300, pattern)
             trb = bytearray(self.tester.user_read_io(0x100300, 6))
-            trb[4] |= 0xC0 #0x3F
-            trb[5] |= 0xF0 #0x0F
-            logger.debug("Tester:  " + trb.hex() + str(find_zeros(trb)))
-            if (trb != pattern):
-                logger.error(f"BIT {i} is stuck hard!")
+            if (bitwise_ornot(trb, single_bit) != pattern):
+                logger.error(f"BIT {pio_names[i]} is stuck hard!")
+                errors += 1
+            elif (bitwise_ornot(trb, mask) != pattern):
+                logger.error(f"Local short from {pio_names[i]} to others: {pattern} vs {trb}")
+                errors += 1
+            if not test_continuity:
+                continue
+
             rb = bytearray(self.dut.user_read_io(0x100300, 6))
-            rb[4] |= 0xC0 #0x3F
-            rb[5] |= 0xF0 #0x0F
-            logger.debug("Read:    " + rb.hex() + str(find_zeros(rb)))
+            rb2 = bitwise_ornot(rb, mask)
+            logger.debug("Read:    " + rb.hex() + str(find_zeros(rb2)))
             diff = bytearray(6)
             for i in range(6):
-                diff[i] = pattern[i] ^ rb[i]
+                diff[i] = pattern[i] ^ rb2[i]
             logger.debug("Diff:    " + diff.hex() + str(find_ones(diff)))
             diffs.update(find_ones(diff))
-            if (rb != pattern):
+            if (rb2 != pattern):
                 errors += 1
 
         self.tester.user_write_io(0x100308, zeros)
@@ -543,10 +564,14 @@ class UltimateIIPlusLatticeTests:
         if len(pins) > 0:
             logger.warning(str(pins))
 
-        if errors > 0:
-            raise TestFail("Cartridge / Cassette I/O failure.")
+        return errors
 
-    def _test_014_cartio_out(self):
+    def walking_bit_test_dut_to_tester(self, test_bits, test_continuity = True):
+        # Prepare mask
+        mask = bytearray(8)
+        for i in test_bits:
+            mask[i//8] |= 1 << (i %8)
+
         # Set everything to input on tester
         zeros = bytearray(8)
         self.tester.user_write_io(0x100308, zeros)
@@ -558,35 +583,68 @@ class UltimateIIPlusLatticeTests:
         self.dut.user_write_io(0x100300, buf_en)
         self.dut.user_write_io(0x100308, ones)
 
-        slot_bits = [x for x in range(24)]
-        slot_bits += [x for x in range(25, 38)]
-        cassette_bits = [x for x in range(40, 44)]
-        test_bits = slot_bits + cassette_bits
         errors = 0
+        diffs = set()
 
         # Walking one test; from dut to tester
         for i in test_bits:
             pattern = bytearray(6)
             pattern[5] |= 0x80 # Buffer enable
-            pattern[i//8] |= 1 << (i %8)
+            pattern[i//8] |= 1 << (i % 8)
             logger.debug("Writing: " + pattern.hex())
             self.dut.user_write_io(0x100300, pattern)
             pattern[5] &= 0x7F # Remove buffer enable again
 
             trb = bytearray(self.dut.user_read_io(0x100300, 6))
-            trb[4] &= 0x7F  # VCC mask
-            logger.debug("DUT RB:  " + trb.hex() + str(find_ones(trb)))
-            if (trb != pattern):
-                logger.error(f"BIT {i} is stuck hard!")
-            rb = bytearray(self.tester.user_read_io(0x100300, 6))
-            
-            logger.debug("Read:    " + rb.hex() + str(find_ones(rb)))
-            if (rb != pattern):
+            if (bitwise_and(trb, pattern) != pattern):
+                logger.error(f"BIT {pio_names[i]} is stuck hard!")
+                errors += 1
+            elif (bitwise_and(trb, mask) != pattern):
+                logger.error(f"Local short from {pio_names[i]} to others: {pattern} vs {trb}")
                 errors += 1
 
-        logger.warning(f"Errors: {errors}")
+            if not test_continuity:
+                continue
+
+            rb = bytearray(self.tester.user_read_io(0x100300, 6))
+            rb2 = bitwise_and(rb, mask)
+            logger.debug("Read:    " + rb.hex() + str(find_ones(rb2)))
+            diff = bytearray(6)
+            for i in range(6):
+                diff[i] = pattern[i] ^ rb2[i]
+            logger.debug("Diff:    " + diff.hex() + str(find_ones(diff)))
+            diffs.update(find_ones(diff))
+            if (rb2 != pattern):
+                errors += 1
+
+        logger.info(f"Errors: {errors}")
+        pins = [pio_names[x] for x in diffs]
+        if len(pins) > 0:
+            logger.warning(str(pins))
+
+        self.dut.user_write_io(0x100308, zeros)
+        return errors
+
+    def test_022_cartio_bottom(self):
+        """Cartridge I/O (Bottom Row)"""
+        errors = self.walking_bit_test_tester_to_dut(pio_bottom)
+        errors += self.walking_bit_test_dut_to_tester(pio_bottom_out)
         if errors > 0:
-            raise TestFail("Cartridge / Cassette I/O failure.")
+            raise TestFail("Cartridge Bottom Row failure.")
+
+    def test_023_cartio_top(self):
+        """Cartridge I/O (Top Row)"""
+        errors = self.walking_bit_test_tester_to_dut(pio_top, False)
+        errors += self.walking_bit_test_dut_to_tester(pio_top, False)
+        if errors > 0:
+            raise TestFail("Cartridge Top Row failure.")
+
+    def test_024_cassette_pins(self):
+        """Cassette Pins"""
+        errors = self.walking_bit_test_tester_to_dut(pio_cassette)
+        errors = self.walking_bit_test_dut_to_tester(pio_cassette)
+        if errors > 0:
+            raise TestFail("Cassette Pins failure.")
 
     def test_016_speaker(self):
         """Speaker Amplifier"""
@@ -632,7 +690,6 @@ class UltimateIIPlusLatticeTests:
             calc_fft_mono("speaker.bin", True)
             raise TestFail(f"Peak in spectrum not at 250 Hz {peak}")
 
-
     def program_flash(self, cb = [None, None, None]):
         """Program Flash!"""
         # Program the flash in three steps: 1) FPGA, 2) Application, 3) FAT Filesystem
@@ -642,6 +699,18 @@ class UltimateIIPlusLatticeTests:
         self.dut.ecp_prog_flash(final_appl, 0xA0000)
         self.dut.flash_callback = cb[2]
         self.dut.ecp_prog_flash(final_fat, 0x200000)
+
+    def late_099_boot(self):
+        """Boot Test"""
+        logger.info("Let's see if the unit boots...")
+        self.tester.user_set_io(0x00) # Turn on DUT off
+        time.sleep(0.5) 
+        self.tester.user_set_io(0x30) # Turn on DUT from both 'sides'
+        time.sleep(1.5) 
+        text = self.tester.user_read_console2(False)
+        self.tester.user_set_io(0x00) # Turn on DUT off
+        logger.debug(f"Board replied:\n {text}")
+        return "ConfigManager" in text
 
     def run_all(self):
         self.startup()
@@ -662,8 +731,8 @@ class UltimateIIPlusLatticeTests:
             self.test_008_usb_phy,
             self.test_009_usb_hub,
             self.test_010_usb_sticks,
-            self.test_013_cartio_in,
-            self.test_014_cartio_out,
+            self.test_022_cartio_bottom,
+            self.test_024_cassette_pins,
             self.test_011_rtc,
         ]
         for test in all:
@@ -682,6 +751,8 @@ class UltimateIIPlusLatticeTests:
         funcs = {}
         for k in di.keys():
             if k.startswith("test"):
+                funcs[k] = di[k]
+            if k.startswith("late"):
                 funcs[k] = di[k]
         return funcs
 

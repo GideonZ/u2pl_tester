@@ -27,6 +27,7 @@ USER_READ_CONSOLE = 0xCC07
 USER_UPLOAD = 0xCC08
 USER_RUN_APPL = 0xCC09
 USER_READ_DEBUG = 0xCC0A
+USER_READ_CONSOLE2 = 0xCC0B
 
 CODE_OKAY = 0x00
 CODE_BAD_SYNC = 0xEE
@@ -163,6 +164,18 @@ class JtagClient:
 
         if do_print:
             print(ret.decode(encoding='cp1252'))
+        return ret.decode(encoding='cp1252')
+
+    def user_read_console2(self, do_print = False):
+        self.sock.sendall(struct.pack(">H", USER_READ_CONSOLE2))
+        ret = self.sock.recv(4, socket.MSG_WAITALL) # Expect 4 bytes back with length info
+        (err, _, len) = struct.unpack("<BBH", ret)
+        ret = self.sock.recv(len, socket.MSG_WAITALL)
+        if err != 0:
+            raise JtagClientException("Failed to read Console Text: " + self.errorstring(ret[0]))
+
+        if do_print:
+            logger.info(ret.decode(encoding='cp1252'))
         return ret.decode(encoding='cp1252')
 
     def user_upload(self, name, addr):
