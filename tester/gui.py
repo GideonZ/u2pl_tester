@@ -360,6 +360,7 @@ class MyGui:
             'booted' : self.boot_ok,
             'critical': self.critical,
             'failed': ','.join(self.failed_tests),
+            'flash_id': f'{self.testsuite.flashid:016X}',
         })
 
         self.db.add_log({'serial' : self.serial,
