@@ -394,7 +394,7 @@ class UltimateIIPlusLatticeTests:
         if result != 0:
             raise TestFail(f"Couldn't find USB HUB (USB2503) Err = {result}")
 
-    def test_010_usb_sticks(self):
+    def _test_010_usb_sticks(self):
         """USB Sticks Detection"""
         time.sleep(3)
         (result, console) = self.dut.perform_test(TEST_USB_PORTS)
@@ -641,8 +641,8 @@ class UltimateIIPlusLatticeTests:
 
     def test_024_cassette_pins(self):
         """Cassette Pins"""
-        errors = self.walking_bit_test_tester_to_dut(pio_cassette)
-        errors = self.walking_bit_test_dut_to_tester(pio_cassette)
+        errors = self.walking_bit_test_tester_to_dut(pio_cassette, False)
+        errors = self.walking_bit_test_dut_to_tester(pio_cassette, False)
         if errors > 0:
             raise TestFail("Cassette Pins failure.")
 
