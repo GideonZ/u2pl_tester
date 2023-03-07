@@ -122,6 +122,7 @@ class MyGui:
             self.textbox.insert(tk.END, "-> Result: CRITICAL FAILURE!\n")
             self.textbox.insert(tk.END, f"Reason: {e}\n\n")
             critical = True
+            self.errors += 1
             self.critical = True
         except TestFail as e:
             self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
@@ -137,7 +138,11 @@ class MyGui:
             try:
                 self.after[name]()
             except TestFailCritical as e:
+                self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
+                self.textbox.insert(tk.END, "-> Result: CRITICAL FAILURE!\n")
+                self.textbox.insert(tk.END, f"Reason: {e}\n\n")
                 critical = True
+                self.errors += 1
                 self.critical = True
 
         self.textbox.see(tk.END)
@@ -315,7 +320,7 @@ class MyGui:
         if board:
             if 'fpga_id' in board:
                 if board['fpga_id'] != fpga_id_string:
-                    msg = "This Serial Number has already been used for another board!"
+                    msg = f"Serial Number {self.serial} has already been used for a board with FPGA ID {board['fpga_id']}!"
                     messagebox.showerror("Wrong Serial #", msg)
                     raise TestFailCritical(msg)
 
