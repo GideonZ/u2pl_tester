@@ -188,14 +188,17 @@ class MyGui:
 
         for name in self.functions:
             if "test" in name:
-                if self.RunOneTest(name): # Returns 'true' when a critical error occurred (could also have re-raised)
-                    break
+                if not self.test_skip[name].get():
+                    if self.RunOneTest(name): # Returns 'true' when a critical error occurred (could also have re-raised)
+                        break
 
         # If all tests are successful, the board can be flashed
         if self.errors == 0:
-            self.testsuite.program_flash([self.FlashUpdateFPGA, self.FlashUpdateAppl, self.FlashUpdateFAT])
-            self.flashed = "Yes"
+            if not self.skip_flashing.get():
+                self.testsuite.program_flash([self.FlashUpdateFPGA, self.FlashUpdateAppl, self.FlashUpdateFAT])
+                self.flashed = "Yes"
             self.boot_ok = self.testsuite.late_099_boot()
+            self.testsuite.dut_off()            
             if not self.boot_ok:
                 self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
                 self.textbox.insert(tk.END, "\n!!! BOARD DOESN'T BOOT !!!\n\n")
@@ -205,6 +208,7 @@ class MyGui:
                 self.textbox.insert(tk.END, "\n*** BOARD SUCCESSFULLY TESTED AND PROGRAMMED! ***\n\n")
 
         else:
+            self.testsuite.dut_off()            
             messagebox.showerror("Reject", "Board has not been programmed due to errors.")
 
         self.testsuite.dut_off()            
@@ -236,18 +240,23 @@ class MyGui:
         per_frame = (num_tests + 1) // 2
         self.test_icon_canvases = { }
         self.test_icon_images = { }
+        self.test_skip = { }
         for idx, name in enumerate(self.functions):
             (_func, doc) = self.functions[name]
             test_frame = self.test_frames[idx // per_frame]
-            tk.Label(test_frame, text = doc, font=("Liberation Serif", 16)).grid(column = 0, row = len(self.test_icon_canvases), sticky=tk.W)
+            #tk.Label(test_frame, text = doc, font=("Liberation Serif", 15)).grid(column = 0, row = len(self.test_icon_canvases), sticky=tk.W)
             canvas = tk.Canvas(test_frame, width = 48, height = 48)
             canvas.grid(column = 1, row = len(self.test_icon_canvases))
+            self.test_skip[name] = tk.IntVar()
+            tk.Checkbutton(test_frame, text = doc, var = self.test_skip[name], font=("Liberation Serif", 15)).grid(
+                column = 0, row = len(self.test_icon_canvases), sticky=tk.W)
             self.test_icon_canvases[name] = canvas
             self.test_icon_images[name] = canvas.create_image(24, 24)
 
         self.test_frames[0].grid(column = 2, row = 1)
         self.test_frames[1].grid(column = 3, row = 1)
 
+        pprint(self.test_skip)
         self.serial_frame = tk.Frame(self.window)
         tk.Label(self.serial_frame, text = "Serial #:").grid(column = 0, row = 0)
         self.serial_entry = tk.Entry(self.serial_frame)
@@ -269,6 +278,8 @@ class MyGui:
         self.progress[0].grid(column = 1, row = 0, pady = 4)
         self.progress[1].grid(column = 1, row = 1, pady = 4)
         self.progress[2].grid(column = 1, row = 2, pady = 4)
+        self.skip_flashing = tk.IntVar()
+        tk.Checkbutton(self.window, text = "Skip Flashing", var = self.skip_flashing).grid(column = 1, row = 2, sticky=tk.W)
         tk.Label(self.progress_frame, text = "Flashing FPGA Bitfile", anchor = 'w').grid(column = 0, row = 0, sticky = tk.W, padx = 10)
         tk.Label(self.progress_frame, text = "Flashing Application", anchor = 'w').grid(column = 0, row = 1, sticky = tk.W, padx = 10)
         tk.Label(self.progress_frame, text = "Flashing FAT FileSystem", anchor = 'w').grid(column = 0, row = 2, sticky = tk.W, padx = 10)
