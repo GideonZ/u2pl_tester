@@ -198,7 +198,7 @@ class UltimateIIPlusLatticeTests:
 
         if not ok:
             self.tester.report_adcs()
-            raise TestFail('One or more regulator voltages out of range')
+            raise TestFailCritical('One or more regulator voltages out of range')
 
     def test_019_unique_id(self):
         """Unique ID"""
@@ -394,9 +394,9 @@ class UltimateIIPlusLatticeTests:
         if result != 0:
             raise TestFail(f"Couldn't find USB HUB (USB2503) Err = {result}")
 
-    def _test_010_usb_sticks(self):
+    def test_010_usb_sticks(self):
         """USB Sticks Detection"""
-        time.sleep(3)
+        time.sleep(4)
         (result, console) = self.dut.perform_test(TEST_USB_PORTS)
         logger.debug(f"Console Output:\n{console}")
         if result != 0:
@@ -705,6 +705,7 @@ class UltimateIIPlusLatticeTests:
         logger.info("Let's see if the unit boots...")
         self.tester.user_set_io(0x00) # Turn on DUT off
         time.sleep(0.5) 
+        text = self.tester.user_read_console2(False)
         self.tester.user_set_io(0x30) # Turn on DUT from both 'sides'
         time.sleep(1.5) 
         text = self.tester.user_read_console2(False)
