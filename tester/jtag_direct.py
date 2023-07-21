@@ -1,5 +1,6 @@
 from pyftdi.jtag import *
 from pyftdi.ftdi import *
+import time
 
 ISC_NOOP = 0xFF # 0 bits - Non-operation 
 READ_ID = 0xE0 # 24 bits - Read out the 32-bit IDCODE of the device 
@@ -41,6 +42,8 @@ LSC_PROG_FEABITS = 0xF8 # 24 bits - Program User Feature Bits, such as CFG port 
 LSC_READ_FEABITS = 0xFB # 24 bits - Read User Feature Bits, such as CFH port and pin persistence, PWD_EN, PWD_ALL, DEC_ONLY, Feature Row Lock etc. 
 LSC_PROG_OTP = 0xF9 # 24 bits - Program OTP bits, to set Memory Sectors One Time Programmable 
 LSC_READ_OTP = 0xFA # 24 bits - Read OTP bits setting 
+LSC_USER1 = 0x32
+LSC_USER2 = 0x38
 
 
 class jtag_direct(object):
@@ -122,22 +125,93 @@ class jtag_direct(object):
                 if len(buffer) <= 0:
                     break
 
-                # print(len(buffer))
                 olen = len(buffer)-1
                 cmd = bytearray((Ftdi.WRITE_BYTES_NVE_LSB, olen & 0xff,
                           (olen >> 8) & 0xff))
                 cmd.extend(self.bitreverse(buffer))
+                #cmd.extend(buffer)
                 self.jtag._ctrl._stack_cmd(cmd)
-                self.jtag._ctrl.sync()
+                #self.jtag._ctrl.sync()
 
         self.jtag.change_state('update_dr')
         self.jtag.write_ir(BitSequence(ISC_DISABLE, False, 8))
         
         self.read_status_register()	
 
+    def reverse_file(self, infile, outfile):
+        with open(infile, "rb") as fi:
+            with open(outfile, "wb") as fo:
+                buffer = fi.read()
+                fo.write(self.bitreverse(buffer))
+
+    def set_user_ir(self, ir):
+        self.jtag.write_ir(BitSequence(LSC_USER1, False, 8))
+        
+        #self.jtag.write_dr(BitSequence(ir | ir << 4, False, 8))
+        self.jtag.change_state('shift_dr')
+        rb = self.jtag.shift_register(BitSequence(ir, False, 8))
+        self.jtag.go_idle()
+        print(ir, rb)
+
+    def rw_user_data(self, data) -> BitSequence:
+        self.jtag.write_ir(BitSequence(LSC_USER2, False, 8))
+        self.jtag.change_state('shift_dr')
+        print("Now in shift_dr")
+        data = self.jtag.shift_register(data)
+        self.jtag.go_idle()
+        return data
+    
+    def set_leds(self, leds):
+        self.set_user_ir(0)
+        userid = int(self.jtag.read_dr(32))
+        self.jtag.go_idle()
+        print(f"UserID: {userid:08x}")
+        self.set_user_ir(5)
+        self.set_user_ir(4)
+        self.set_user_ir(3)
+        self.set_user_ir(2)
+        self.set_user_ir(1)
+        self.set_user_ir(0)
+        return self.rw_user_data(leds)
+
+    def read_fifo(self, expected, cmd = 4):
+        available = 0
+        readback = b''
+        while expected > 0:
+            self.set_user_ir(cmd)
+            self.jtag.write_ir(BitSequence(LSC_USER2, False, 8))
+            self.jtag.change_state('shift_dr')
+
+            available = int(self.jtag.shift_register(BitSequence(0, False, 8)))
+            print(f"Number of bytes available in FIFO: {available}, need: {expected}")
+            if available > expected:
+                available = expected
+            if available == 0:
+                print("No more bytes in fifo?!");
+
+            bytes = bytearray(available)
+            bytes[-1] = 0xF0 # no read on last
+            readback += bytearray(self.jtag.shift_register(BitSequence(bytes_ = bytes)))
+
+        self.jtag.go_idle()
+        return readback
+
+    def user_read_console(self, maxlen):
+        return self.read_fifo(maxlen, 10)
+
 if __name__ == '__main__':
     j = jtag_direct()
     j.read_id_code()
     j.read_unique_id()
     j.read_status_register()
-    j.ecp_prog_sram('tester/binaries/u2p_ecp5_impl1.bit')
+    #j.reverse('tester/binaries/u2p_ecp5_impl1.bit', 'tester/binaries/u2p_ecp5_impl1.rev')
+    start_time = time.perf_counter()
+    #j.ecp_prog_sram('binaries/u2p_ecp5_impl1.bit')
+    j.ecp_prog_sram('binaries/u2p_ecp5_dut_impl1.bit')
+    end_time = time.perf_counter()
+    execution_time = end_time - start_time
+    print(f"Execution time: {execution_time} seconds")
+    time.sleep(1)
+    print(j.set_leds(BitSequence(0, length = 32)))
+
+    print(j.user_read_console(200))
