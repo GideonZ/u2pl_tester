@@ -1,9 +1,15 @@
-import time, struct, logging
+import time, struct, logging, os
 from datetime import datetime
-from jtag_functions import JtagClient, JtagClientException
+#from jtag_functions import JtagClient, JtagClientException
+from jtag_direct import JtagClient, JtagClientException
 
 tester_fpga = 'binaries/ecp5_tester_impl1.bit'
 tester_app  = 'binaries/tester.bin'
+
+PROG_BUFFER     = 0x1000000
+PROG_PROGRESS   = 0x0088
+PROG_LENGTH     = 0x008C
+PROG_LOCATION   = 0x0090
 
 DUT_TO_TESTER   = 0x0094
 TESTER_TO_DUT   = 0x0098
@@ -103,8 +109,9 @@ class Rtc:
 
 class Tester(JtagClient):
     def __init__(self):
-        JtagClient.__init__(self, 'localhost', 5000)
-        self.check_daemon()
+        JtagClient.__init__(self, url = 'ftdi://ftdi:2232h/2')#, 'localhost', 5000)
+        #JtagClient.__init__(self, 'localhost', 5000)
+        #self.check_daemon()
         if self.ecp_read_id() != 0x41111043:
             raise JtagClientException("ColorLight i5 FPGA module not recognized")
         self.ecp_load_fpga(tester_fpga)
@@ -125,6 +132,7 @@ class Tester(JtagClient):
         text = self.user_read_console()
         if 'Hello I2C' not in text:
             raise JtagClientException("Tester Application failure")
+        print(text)
 
     def turn_off_dut(self):
         self.user_set_io(0x00)
@@ -150,8 +158,10 @@ class Tester(JtagClient):
 
 class DeviceUnderTest(JtagClient):
     def __init__(self):
-        JtagClient.__init__(self, 'localhost', 6000)
-        self.check_daemon()
+        JtagClient.__init__(self, url = 'ftdi://ftdi:2232h/1')
+        #JtagClient.__init__(self, 'localhost', 6000)
+        #self.check_daemon()
+        self.flash_callback = None
 
     def perform_test(self, test_id, max_time = 10):
         self.user_write_int32(TESTER_TO_DUT, test_id)
@@ -184,6 +194,30 @@ class DeviceUnderTest(JtagClient):
         fixed = datetime(1980, 1, 1)
         return dt.timestamp() - fixed.timestamp()
 
+    def ecp_prog_flash(self, name, addr):
+        max_time = 5*120 # 2 minutes
+        file_size = os.stat(name)
+        logger.info(f"Size of file: {file_size.st_size} bytes")
+        pages = (file_size.st_size + 255) // 256 #Callback for every page
+        self.user_upload(name, PROG_BUFFER)
+        self.user_write_int32(PROG_LENGTH, int(file_size.st_size))
+        self.user_write_int32(PROG_LOCATION, addr)
+
+        self.user_write_int32(TESTER_TO_DUT, 12)
+        while self.user_read_int32(TESTER_TO_DUT) == 12 and max_time > 0:
+            time.sleep(.1)
+            if self.flash_callback:
+                progress = 100 * self.user_read_int32(PROG_PROGRESS)
+                self.flash_callback(progress/pages)
+            max_time -= 1
+
+        if self.user_read_int32(TESTER_TO_DUT) == 12:
+            raise JtagClientException("Test did not complete in time.")
+
+        text = self.user_read_console(True)
+        result = self.user_read_int32(TEST_STATUS)
+        return (result, text)
+
 def find_ones(b):
     ret = []
     for idx,byte in enumerate(b):
@@ -203,6 +237,8 @@ def find_zeros(b):
 if __name__ == '__main__':
     t = Tester()
 
-    #TesterADC.report_adcs(t)
+    TesterADC.report_adcs(t)
     sup = TesterADC.read_adc_channel(t, 'Supply', 4)
     logger.info(f"Supply is: {sup:.2f} V")
+    d = t.user_read_memory(0, 256)
+    t.print_hex(d)

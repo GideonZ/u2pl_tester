@@ -9,6 +9,7 @@ import struct
 from fft import calc_fft, calc_fft_mono
 import numpy as np
 import logging
+from tkinter import ttk, messagebox
 
 # create logger
 logger = logging.getLogger('Tests')
@@ -106,10 +107,10 @@ class UltimateIIPlusLatticeTests:
     def startup(self):
         # Startup JTAG Daemons
         os.system('killall ecpprog')
-        subprocess.Popen([ECPPROG, '-I', 'A', '-D', '6000'])
-        time.sleep(0.5)
-        subprocess.Popen([ECPPROG, '-I', 'B', '-D', '5000'])
-        time.sleep(0.5)
+        #subprocess.Popen([ECPPROG, '-I', 'A', '-D', '6000'])
+        #time.sleep(0.5)
+        #subprocess.Popen([ECPPROG, '-I', 'B', '-D', '5000'])
+        #time.sleep(0.5)
 
         self.tester = Tester()
         self.dut = DeviceUnderTest()    

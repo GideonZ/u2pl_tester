@@ -45,7 +45,6 @@ class JtagClient:
     def __init__(self, host, port):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.port = port
-        self.flash_callback = None
         for i in range(20):
             try:
                 logger.info(f"Trying to connect to port {self.port}")
