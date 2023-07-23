@@ -207,14 +207,16 @@ class JtagClient:
         self.jtag.shift_and_update_register(BitSequence(value, False, 8))
         self.jtag.go_idle()
 
-    def read_fifo(self, expected, cmd = 4, stopOnEmpty = False):
+    def read_fifo(self, expected, cmd = 4, stopOnEmpty = False, readAll = False):
         available = 0
         readback = b''
         while expected > 0:
             self.set_user_ir(cmd)
             available = int(self.read_user_data(8))
             #logger.info(f"Number of bytes available in FIFO: {available}, need: {expected}")
-            if available > expected:
+            if readAll:
+                available = expected # !!!!
+            elif available > expected:
                 available = expected
             if available == 0:
                 if stopOnEmpty:
@@ -227,16 +229,16 @@ class JtagClient:
             outbytes = bytearray(available)
             outbytes[-1] = 0xF0 # no read on last
 
-            #olen = len(outbytes)-1
-            ##jtagcmd = bytearray((Ftdi.RW_BYTES_PVE_NVE_LSB, olen & 0xff, (olen >> 8) & 0xff))
-            #jtagcmd = bytearray((0x3d, olen & 0xff, (olen >> 8) & 0xff))
-            #jtagcmd.extend(outbytes)
-            #self.jtag._ctrl._stack_cmd(jtagcmd)
-            #self.jtag._ctrl.sync()
-            #read_now = self.jtag._ctrl._ftdi.read_data_bytes(olen+1, 4)
+            olen = len(outbytes)-1
+            #jtagcmd = bytearray((Ftdi.RW_BYTES_PVE_NVE_LSB, olen & 0xff, (olen >> 8) & 0xff))
+            jtagcmd = bytearray((0x3d, olen & 0xff, (olen >> 8) & 0xff))
+            jtagcmd.extend(outbytes)
+            self.jtag._ctrl._stack_cmd(jtagcmd)
+            self.jtag._ctrl.sync()
+            read_now = self.jtag._ctrl._ftdi.read_data_bytes(olen+1, 4)
             #print(len(read_now), read_now)
 
-            read_now = self.jtag.shift_register(BitSequence(bytes_ = outbytes)).tobytes(msby = True)
+            #read_now = self.jtag.shift_register(BitSequence(bytes_ = outbytes)).tobytes(msby = True)
             expected -= len(read_now)
             readback += read_now
 
@@ -327,7 +329,7 @@ class JtagClient:
             command = bytearray([ addrbytes[0], 4, addrbytes[1], 5, addrbytes[2], 6, addrbytes[3], 7, now - 1, 0x03])
             self.set_user_ir(5)
             self.jtag.shift_and_update_register(BitSequence(bytes_ = command))
-            result += self.read_fifo(now * 4)
+            result += self.read_fifo(now * 4, readAll = True) # Assuming reading from memory is always faster than JTAG; we can just continue reading the fifo!
             len -= now
             addr += 4*now
 

@@ -1,5 +1,5 @@
 
-from jtag_functions import JtagClientException
+from jtag_direct import JtagClientException
 from support import TestFail, TestFailCritical, Tester, DeviceUnderTest, find_ones, find_zeros
 import os
 import subprocess
@@ -709,7 +709,7 @@ class UltimateIIPlusLatticeTests:
         text = self.tester.user_read_console2(False)
         self.tester.user_set_io(0x30) # Turn on DUT from both 'sides'
         time.sleep(1.5) 
-        text = self.tester.user_read_console2(False)
+        text = self.tester.user_read_console2(True)
         self.tester.user_set_io(0x00) # Turn on DUT off
         logger.debug(f"Board replied:\n {text}")
         return "ConfigManager" in text
