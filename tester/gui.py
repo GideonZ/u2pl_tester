@@ -188,7 +188,7 @@ class MyGui:
 
         for name in self.functions:
             if "test" in name:
-                if not self.test_skip[name].get():
+                if True: #not self.test_skip[name].get():
                     if self.RunOneTest(name): # Returns 'true' when a critical error occurred (could also have re-raised)
                         break
 
@@ -247,8 +247,10 @@ class MyGui:
             #tk.Label(test_frame, text = doc, font=("Liberation Serif", 15)).grid(column = 0, row = len(self.test_icon_canvases), sticky=tk.W)
             canvas = tk.Canvas(test_frame, width = 48, height = 48)
             canvas.grid(column = 1, row = len(self.test_icon_canvases))
-            self.test_skip[name] = tk.IntVar()
-            tk.Checkbutton(test_frame, text = doc, var = self.test_skip[name], font=("Liberation Serif", 15)).grid(
+            #self.test_skip[name] = tk.IntVar()
+            #tk.Checkbutton(test_frame, text = doc, var = self.test_skip[name], font=("Liberation Serif", 15)).grid(
+            #    column = 0, row = len(self.test_icon_canvases), sticky=tk.W)
+            tk.Label(test_frame, text = doc, font=("Liberation Serif", 15)).grid(
                 column = 0, row = len(self.test_icon_canvases), sticky=tk.W)
             self.test_icon_canvases[name] = canvas
             self.test_icon_images[name] = canvas.create_image(24, 24)
@@ -256,7 +258,7 @@ class MyGui:
         self.test_frames[0].grid(column = 2, row = 1)
         self.test_frames[1].grid(column = 3, row = 1)
 
-        pprint(self.test_skip)
+        #pprint(self.test_skip)
         self.serial_frame = tk.Frame(self.window)
         tk.Label(self.serial_frame, text = "Serial #:").grid(column = 0, row = 0)
         self.serial_entry = tk.Entry(self.serial_frame)
