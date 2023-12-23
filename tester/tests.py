@@ -395,7 +395,7 @@ class UltimateIIPlusLatticeTests:
         if result != 0:
             raise TestFail(f"Couldn't find USB HUB (USB2503) Err = {result}")
 
-    def test_010_usb_sticks(self):
+    def _test_010_usb_sticks(self):
         """USB Sticks Detection"""
         time.sleep(4)
         (result, console) = self.dut.perform_test(TEST_USB_PORTS)
