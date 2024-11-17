@@ -194,18 +194,27 @@ class MyGui:
 
         # If all tests are successful, the board can be flashed
         if self.errors == 0:
-            if not self.skip_flashing.get():
+            if not self.flash_tester.get():
                 self.testsuite.program_flash([self.FlashUpdateFPGA, self.FlashUpdateAppl, self.FlashUpdateFAT])
                 self.flashed = "Yes"
-            self.boot_ok = self.testsuite.late_099_boot()
-            self.testsuite.dut_off()            
-            if not self.boot_ok:
-                self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
-                self.textbox.insert(tk.END, "\n!!! BOARD DOESN'T BOOT !!!\n\n")
-                messagebox.showerror("Reject", "Board doesn't boot correctly after Flashing.")
             else:
-                self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_pass)
-                self.textbox.insert(tk.END, "\n*** BOARD SUCCESSFULLY TESTED AND PROGRAMMED! ***\n\n")
+                self.testsuite.program_tester(self.FlashUpdateFPGA)
+                self.flashed = "SlotTester"
+
+            if not self.flash_tester.get():
+                self.boot_ok = self.testsuite.late_099_boot()
+                self.testsuite.dut_off()            
+                if not self.boot_ok:
+                    self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_fail)
+                    self.textbox.insert(tk.END, "\n!!! BOARD DOESN'T BOOT !!!\n\n")
+                    messagebox.showerror("Reject", "Board doesn't boot correctly after Flashing.")
+                else:
+                    self.test_icon_canvases[name].itemconfig(self.test_icon_images[name], image = self.img_pass)
+                    self.textbox.insert(tk.END, "\n*** BOARD SUCCESSFULLY TESTED AND PROGRAMMED! ***\n\n")
+            else:
+                self.textbox.insert(tk.END, "\n*********************************************\n")
+                self.textbox.insert(tk.END, "\n*** BOARD TESTED AS U64II FACTORY TESTER! ***\n")
+                self.textbox.insert(tk.END, "\n*********************************************\n\n")
 
         else:
             self.testsuite.dut_off()            
@@ -280,8 +289,8 @@ class MyGui:
         self.progress[0].grid(column = 1, row = 0, pady = 4)
         self.progress[1].grid(column = 1, row = 1, pady = 4)
         self.progress[2].grid(column = 1, row = 2, pady = 4)
-        self.skip_flashing = tk.IntVar()
-        tk.Checkbutton(self.window, text = "Skip Flashing", var = self.skip_flashing).grid(column = 1, row = 2, sticky=tk.W)
+        self.flash_tester = tk.IntVar()
+        tk.Checkbutton(self.window, text = "Flash U64 Cart Tester", var = self.flash_tester).grid(column = 1, row = 2, sticky=tk.W)
         tk.Label(self.progress_frame, text = "Flashing FPGA Bitfile", anchor = 'w').grid(column = 0, row = 0, sticky = tk.W, padx = 10)
         tk.Label(self.progress_frame, text = "Flashing Application", anchor = 'w').grid(column = 0, row = 1, sticky = tk.W, padx = 10)
         tk.Label(self.progress_frame, text = "Flashing FAT FileSystem", anchor = 'w').grid(column = 0, row = 2, sticky = tk.W, padx = 10)

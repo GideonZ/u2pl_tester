@@ -23,6 +23,7 @@ dut_appl  = 'binaries/dut.bin'
 final_fpga = 'binaries/u2p_ecp5_impl1.bit'
 final_appl = 'binaries/ultimate.app'
 final_fat = 'binaries/fat.bin'
+tester_fpga = 'binaries/u2pl_slot_tester_impl1.bit'
 ECPPROG = '../ecpprog/ecpprog/ecpprog'
 
 TEST_SEND_ETH = 5
@@ -700,6 +701,11 @@ class UltimateIIPlusLatticeTests:
         self.dut.ecp_prog_flash(final_appl, 0xA0000)
         self.dut.flash_callback = cb[2]
         self.dut.ecp_prog_flash(final_fat, 0x200000)
+
+    def program_tester(self, cb = None ):
+        """Program Tester!"""
+        self.dut.flash_callback = cb
+        self.dut.ecp_prog_flash(tester_fpga, 0)
 
     def late_099_boot(self):
         """Boot Test"""
