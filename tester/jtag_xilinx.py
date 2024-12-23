@@ -4,6 +4,7 @@ import time
 import logging
 import struct
 import os
+import math
 
 # create logger
 logger = logging.getLogger('JTAG')
@@ -207,7 +208,7 @@ class JtagClient:
         while expected > 0:
             self.set_user_ir(cmd)
             available = int(self.read_user_data(8))
-            #logger.info(f"Number of bytes available in FIFO: {available}, need: {expected}")
+            # logger.info(f"Number of bytes available in FIFO: {available}, need: {expected}")
             if readAll:
                 available = expected # !!!!
             elif available > expected:
@@ -343,15 +344,20 @@ class JtagClient:
         len //= 4
         #start_time = time.perf_counter()
 
+        cmds = 0
+        words = len
         while(len > 0):
             now = len if len < 256 else 256
             addrbytes = struct.pack("<L", addr)
             command = bytearray([ addrbytes[0], 4, addrbytes[1], 5, addrbytes[2], 6, addrbytes[3], 7, now - 1, 0x03])
+            cmds += 1
             self.set_user_ir(5)
             self.jtag.shift_and_update_register(BitSequence(bytes_ = command))
             result += self.read_fifo(now * 4, readAll = True) # Assuming reading from memory is always faster than JTAG; we can just continue reading the fifo!
             len -= now
             addr += 4*now
+
+        # print(f"Words per iteration: {words/cmds} ({cmds} iterations)")
 
         #end_time = time.perf_counter()
         #execution_time = end_time - start_time
@@ -564,10 +570,26 @@ def init_ddr2(j):
     j.user_write_int32(0x104, 0xABCDEF55)
     j.user_write_int32(0x100, 0x87654321)
     
-def prog_fpga(logger, j):
+def write_sine_wave(jtag):
+    scale = math.pow(2.0, 31) * 0.9
+    data = b''
+    for i in range(192):
+        phase = i * (2. * math.pi / 48.) # 1000 Hz
+        sampleL = scale * math.sin(phase)
+        phase = i * (2. * math.pi / 64.) # 750 Hz
+        sampleR = scale * math.sin(phase)
+        data += struct.pack("<ll", int(sampleL), int(sampleR))
+
+    ## data should now have 192 samples
+    jtag.user_write_memory(0x1100000, data)
+
+def prog_fpga(logger, j, sel):
     start_time = time.perf_counter()
     #j.xilinx_load_fpga('/home/gideon/proj/ult64/target/u64_artix/u64_artix.runs/impl_1/u64_mk2_ddr2test.bit')
-    j.xilinx_load_fpga('/home/gideon/proj/ult64/target/u64_artix/u64_artix.runs/impl_1/u64_mk2_artix.bit')
+    if sel == 1:
+        j.xilinx_load_fpga('/home/gideon/proj/ult64/target/u64ii_loader/u64ii_loader.runs/impl_1/u64_mk2_loader.bit')
+    else:
+        j.xilinx_load_fpga('/home/gideon/proj/ult64/target/u64_artix/u64_artix.runs/impl_1/u64_mk2_artix.bit')
     end_time = time.perf_counter()
     execution_time = end_time - start_time
     logger.info(f"Execution time: {execution_time} seconds")
@@ -577,44 +599,65 @@ import sys
 if __name__ == '__main__':
     logger.addHandler(ch)
     j = JtagClient()
-    j.xilinx_read_id()
+    id = j.xilinx_read_id()
+    if id != 0x0362C093:
+        logger.error(f"IDCODE does not match: {id:08x}")
+        sys.exit(1)
 
     if j.user_read_id() == 0xdead1541:
         j.user_write_int32(0xFFFC, 0x12345)
 
-    if len(sys.argv) > 1 and sys.argv[1] == 'prog':
-        prog_fpga(logger, j)
-
-    j.user_read_id()
-    #init_ddr2(j)
-    #calibrateDQS(j)
-    #dumpDelays(j)
-
-    #print(f'{j.user_read_int32(0):08x}, {j.user_read_int32(4):08x}')
-    #print(f'{struct.unpack(">L", j.user_read_io(4, 4))[0]:08x}')
-
-    #j.user_write_io(0x10, b'\n')
-    #j.user_write_io(0x10, b'\n')
-    #j.user_write_io(0x10, b'-')
-    #j.user_write_io(0x10, b'-')
-    #j.user_write_io(0x10, b'\n')
-    #j.user_write_io(0x10, b'\n')
-
-
-    #j.user_run_bare('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/ultimate/result/ultimate.bin')
+    if len(sys.argv) > 1 and sys.argv[1] == 'start':
+        j.user_set_outputs(0x80) # Unreset
+        j.xilinx_read_id()
+        sys.exit(0)
+    elif len(sys.argv) > 1 and sys.argv[1] == 'appl':
+        j.user_set_outputs(0x80) # Reset
+        j.user_upload('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/ultimate/result/ultimate.bin', 0x30000)
+        j.user_run_app(0x30000, reset = False)
+        j.user_set_outputs(0x00) # Reset
+        j.xilinx_read_id()
+        sys.exit(0)
+    elif len(sys.argv) > 1 and sys.argv[1] == 'loader':
+        prog_fpga(logger, j, 1)
+    else:
+        prog_fpga(logger, j, 0)
 
     j.user_set_outputs(0x80) # Unreset to start bootloader
-    j.user_read_id()
     time.sleep(1)
     data = j.user_read_console(do_print = True)
 
     # After calibration, load the application and run it
     #size = j.user_upload('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/test/result/u64ii_test.bin', 0x30000)
-    size = j.user_upload('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/ultimate/result/ultimate.bin', 0x30000)
-    #size = j.user_upload('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/update/result/update.bin', 0x30000)
+    if len(sys.argv) > 1 and sys.argv[1] == 'loader':
+        size = j.user_upload('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/factorytest/result/factorytest.bin', 0x30000)
+    elif len(sys.argv) > 1 and sys.argv[1] == 'update':
+        size = j.user_upload('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/update/result/update.bin', 0x30000)
+    else:
+        size = j.user_upload('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/ultimate/result/ultimate.bin', 0x30000)
+
     j.user_run_app(0x30000, reset = False)
     #j.user_set_outputs(0x80) # Unreset to start bootloader
+
+    j.user_read_id()
+    j.user_write_memory(0xFFFFF0, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+    size3 = j.user_upload('./fat.bin', 0x1800000)
+    j.user_write_int32(0xFFFFF8, size3)
+    size2 = j.user_upload('/home/gideon/proj/ult64/ultimate/target/u64ii/riscv/ultimate/result/ultimate.app', 0x1400000)
+    j.user_write_int32(0xFFFFF4, size2)
+    size1 = j.user_upload('/home/gideon/proj/ult64/target/u64_artix/u64_artix.runs/impl_1/u64_mk2_artix.bit', 0x1000000)
+    j.user_write_int32(0xFFFFF0, size1)
     j.user_read_id()
 
-    #print(data)
+    # time.sleep(10)
+    #logger.info("Going to read fpga")
+    #with open("fpga.bin", "wb") as fo:
+    #     fo.write(j.user_read_memory(0x1000000, size1))
+    #logger.info("Going to read appl")
+    #with open("appl.bin", "wb") as fo:
+    #     fo.write(j.user_read_memory(0x1400000, size2))
+    #logger.info("Going to read fat")
+    #with open("fat.bin", "wb") as fo:
+    #     fo.write(j.user_read_memory(0x1800000, size3))
 
+# pip3 install opencv-python-headless
