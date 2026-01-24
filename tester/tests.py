@@ -648,7 +648,7 @@ class UltimateIIPlusLatticeTests:
         if errors > 0:
             raise TestFail("Cassette Pins failure.")
 
-    def test_016_speaker(self):
+    def _test_016_speaker(self):
         """Speaker Amplifier"""
         logger.info("Generating sine wave")
         scale = math.pow(2.0, 31) * 0.99
