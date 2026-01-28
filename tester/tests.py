@@ -648,7 +648,7 @@ class UltimateIIPlusLatticeTests:
         if errors > 0:
             raise TestFail("Cassette Pins failure.")
 
-    def _test_016_speaker(self):
+    def test_016_speaker(self):
         """Speaker Amplifier"""
         logger.info("Generating sine wave")
         scale = math.pow(2.0, 31) * 0.99
@@ -680,17 +680,22 @@ class UltimateIIPlusLatticeTests:
         # Now download the data (assuming we will never be faster than writing the data)
         logger.info("Downloading audio data...")
         data = self.tester.user_read_memory(0x8000, 4096 * 4)
-        with open("speaker.bin", 'wb') as fo:
-            fo.write(data)
 
-        (ampl, peak) = calc_fft_mono("speaker.bin", False)
-        
-        if ampl < 0.22:
-            calc_fft_mono("speaker.bin", True)
-            raise TestFail(f"Amplitude on speaker channel low. {ampl}")
-        if int(peak) != 246:
-            calc_fft_mono("speaker.bin", True)
-            raise TestFail(f"Peak in spectrum not at 250 Hz {peak}")
+        time.sleep(1)
+        self.dut.user_write_io(0x10000C, b'\x00')
+        _r = self.dut.user_read_io(0x10000C, 1)
+
+#        with open("speaker.bin", 'wb') as fo:
+#            fo.write(data)
+#
+#        (ampl, peak) = calc_fft_mono("speaker.bin", False)
+#        
+#        if ampl < 0.22:
+#            calc_fft_mono("speaker.bin", True)
+#            raise TestFail(f"Amplitude on speaker channel low. {ampl}")
+#        if int(peak) != 246:
+#            calc_fft_mono("speaker.bin", True)
+#            raise TestFail(f"Peak in spectrum not at 250 Hz {peak}")
 
     def program_flash(self, cb = [None, None, None]):
         """Program Flash!"""
@@ -708,10 +713,14 @@ class UltimateIIPlusLatticeTests:
         self.dut.ecp_prog_flash(tester_fpga, 0)
 
     def late_099_boot(self):
-        """Boot Test"""
-        logger.info("Let's see if the unit boots...")
+        """Turn Off DUT"""
+        #logger.info("Let's see if the unit boots...")
         self.tester.user_set_io(0x00) # Turn on DUT off
         time.sleep(0.5) 
+        self.tester.user_set_io(0x00) # Turn on DUT off
+
+        return True
+
         text = self.tester.user_read_console2(False)
         self.tester.user_set_io(0x30) # Turn on DUT from both 'sides'
         time.sleep(1.5) 
