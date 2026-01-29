@@ -662,15 +662,16 @@ class UltimateIIPlusLatticeTests:
 
         ## data should now have 192 samples
         logger.info("Uploading sound.")
-        self.dut.user_write_memory(0x1100000, data)
+        self.dut.user_write_memory(0x0200000, data)
 
         # Now let's enable this sound on the output
-        regs = struct.pack("<LLB", 0x1100000, 0x1100000 + 192*8, 3)
+        regs = struct.pack("<LLB", 0x0200000, 0x0200000 + 192*8, 3)
         self.dut.user_write_io(0x100210, regs)
 
         # Now let's enable this sound on the output, by writing '1' to speaker enable
         # The oscillator should already be running.
         self.dut.user_write_io(0x10000C, b'\x01')
+        _r = self.dut.user_read_io(0x10000C, 1)
 
         # Let's now also start recording (once ~4000 samples, which takes < 0.1 second to do
         # This is done on the tester; not on the dut!
@@ -713,20 +714,18 @@ class UltimateIIPlusLatticeTests:
         self.dut.ecp_prog_flash(tester_fpga, 0)
 
     def late_099_boot(self):
-        """Turn Off DUT"""
+        """Boot (Listen to Speaker!)"""
         #logger.info("Let's see if the unit boots...")
-        self.tester.user_set_io(0x00) # Turn on DUT off
-        time.sleep(0.5) 
-        self.tester.user_set_io(0x00) # Turn on DUT off
-
-        return True
 
         text = self.tester.user_read_console2(False)
         self.tester.user_set_io(0x30) # Turn on DUT from both 'sides'
-        time.sleep(1.5) 
+        _r = self.tester.user_read_debug()
+        time.sleep(3.5) 
         text = self.tester.user_read_console2(True)
         self.tester.user_set_io(0x00) # Turn on DUT off
+        _r = self.tester.user_read_debug()
         logger.debug(f"Board replied:\n {text}")
+        return True
         return "ConfigManager" in text
 
     def run_all(self):
